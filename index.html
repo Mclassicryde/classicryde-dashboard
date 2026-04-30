@@ -220,7 +220,7 @@ tr:last-child td{border-bottom:none}
   <input type="date" id="cp-from" style="padding:4px 6px;border:1px solid #cdd6e2;border-radius:5px;font-size:11px">
   <span style="font-size:10px;color:#7a8a9e;font-weight:700">To:</span>
   <input type="date" id="cp-to" style="padding:4px 6px;border:1px solid #cdd6e2;border-radius:5px;font-size:11px">
-  <button id="cp-apply" style="background:#1a3a6e;color:#fff;border:none;padding:4px 12px;border-radius:5px;font-weight:700;font-size:10px;cursor:pointer">Apply</button>
+  
   <span id="cp-info" style="font-size:10px;color:#7a8a9e;font-weight:600;margin-left:6px"></span>
 </div>
 </div>
@@ -559,6 +559,7 @@ const fd=v=>'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractio
 const ARC=257.61;
 const N='#0d1b2e',G='#e9b84a',GR='#00c48c',R='#f05252',BL='#4a9fe8',DM='rgba(13,27,46,.35)';
 let period='q',yi=0,qi=1,mi=3,wi=AW.length-1,di=ALL_DAYS.length-1;
+let customBD=null;
 let rC,tC,gC,toC,pC,sC,tSC,dmC,daC,pyC;
 // Unified month list — Q1 + dynamic Q2 (and beyond)
 const MONTH_LIST=[
@@ -611,6 +612,93 @@ function parseDayLabel(lbl){
   try{const parts=lbl.split(' ')[1].split('/');return new Date(YEAR_LBL,parseInt(parts[0])-1,parseInt(parts[1]));}
   catch(e){return null;}
 }
+function buildCustomBD(){
+  if(!customFrom||!customTo)return null;
+  const dayBDs=[];
+  ALL_DAYS.forEach((d,i)=>{const dt=parseDayLabel(d.l);if(dt&&dt>=customFrom&&dt<=customTo&&BREAKDOWN['d'+i])dayBDs.push(BREAKDOWN['d'+i]);});
+  if(!dayBDs.length)return null;
+  const rr=v=>Math.round(v*100)/100;
+  const rp=(a,b)=>b?+(a/b*100).toFixed(1):0;
+
+  // Merge driver data from dr + dt lists
+  const dMap={};
+  dayBDs.forEach(b=>{[...(b.dr||[]),(b.dt||[])].forEach(d=>{
+    if(!dMap[d.n])dMap[d.n]={n:d.n,car:d.car,t:0,r:0,p:0,c:0,m:0};
+    const e=dMap[d.n];e.t+=d.trips||0;e.r+=d.rev||0;e.p+=d.pay||0;
+    e.c+=(d.rev&&d.mp)?d.rev*d.mp/100:0;e.m+=d.mi||0;
+  });});
+  const dArr=Object.values(dMap);
+  const dr=[...dArr].sort((a,b)=>b.r-a.r).slice(0,10).map(d=>({n:d.n,car:d.car,trips:d.t,rev:rr(d.r),avg:d.t?rr(d.r/d.t):0,pay:rr(d.p),mp:rp(d.c,d.r),mi:Math.round(d.m*10)/10}));
+  const dt=[...dArr].sort((a,b)=>b.t-a.t).slice(0,10).map(d=>({n:d.n,car:d.car,trips:d.t,rev:rr(d.r),avg:d.t?rr(d.r/d.t):0,pay:rr(d.p),mp:rp(d.c,d.r),mi:Math.round(d.m*10)/10}));
+
+  // Merge acct
+  const aMap={};
+  dayBDs.forEach(b=>(b.acct||[]).forEach(a=>{if(!aMap[a.n])aMap[a.n]={n:a.n,r:0,t:0,c:0,ns:0};aMap[a.n].r+=a.rev||0;aMap[a.n].t+=a.trips||0;aMap[a.n].c+=(a.rev&&a.mp)?a.rev*a.mp/100:0;aMap[a.n].ns+=a.ns||0;}));
+  const totR=Object.values(aMap).reduce((s,a)=>s+a.r,0);
+  const acct=Object.values(aMap).sort((a,b)=>b.r-a.r).slice(0,10).map(a=>({n:a.n,rev:rr(a.r),sh:rp(a.r,totR),trips:a.t,avg:a.t?rr(a.r/a.t):0,mp:rp(a.c,a.r),ns:a.ns||null}));
+
+  // Merge ns_acct
+  const nsMap={};
+  dayBDs.forEach(b=>(b.ns_acct||[]).forEach(a=>{if(!nsMap[a.a])nsMap[a.a]={a:a.a,ns:0,c:0};nsMap[a.a].ns+=a.ns||0;nsMap[a.a].c+=a.c||0;}));
+  const ns_acct=Object.values(nsMap).sort((a,b)=>b.ns-a.ns).filter(a=>a.ns>0).slice(0,10).map(a=>({a:a.a,ns:a.ns,c:a.c,r:rp(a.ns,a.ns+a.c)}));
+
+  // Merge geo / geo_do
+  const gMap={},gdMap={};
+  dayBDs.forEach(b=>{(b.geo||[]).forEach(g=>{if(!gMap[g.a])gMap[g.a]={a:g.a,t:0,r:0};gMap[g.a].t+=g.trips||0;gMap[g.a].r+=g.rev||0;});(b.geo_do||[]).forEach(g=>{if(!gdMap[g.a])gdMap[g.a]={a:g.a,t:0,r:0};gdMap[g.a].t+=g.trips||0;gdMap[g.a].r+=g.rev||0;});});
+  const totGT=Object.values(gMap).reduce((s,g)=>s+g.t,0)||1,totDT=Object.values(gdMap).reduce((s,g)=>s+g.t,0)||1;
+  const geo=Object.values(gMap).sort((a,b)=>b.t-a.t).slice(0,8).map(g=>({a:g.a,trips:g.t,rev:rr(g.r),sh:rp(g.t,totGT)}));
+  const geo_do=Object.values(gdMap).sort((a,b)=>b.t-a.t).slice(0,8).map(g=>({a:g.a,trips:g.t,rev:rr(g.r),sh:rp(g.t,totDT)}));
+
+  // Merge fop, corr, tod, burn_zone
+  const fMap={},cMap={},tMap={},bzMap={};
+  dayBDs.forEach(b=>{
+    (b.fop||[]).forEach(f=>{if(!fMap[f.t])fMap[f.t]={t:f.t,r:0,trips:0};fMap[f.t].r+=f.rev||0;fMap[f.t].trips+=f.trips||0;});
+    (b.corr||[]).forEach(c=>{if(!cMap[c.c])cMap[c.c]={c:c.c,t:0,r:0};cMap[c.c].t+=c.trips||0;cMap[c.c].r+=c.rev||0;});
+    (b.tod||[]).forEach(t=>{if(!tMap[t.w])tMap[t.w]={w:t.w,trips:0,rev:0};tMap[t.w].trips+=t.trips||0;tMap[t.w].rev+=t.rev||0;});
+    (b.burn_zone||[]).forEach(z=>{if(!bzMap[z.a])bzMap[z.a]={a:z.a,trips:0,amt:0};bzMap[z.a].trips+=z.trips||0;bzMap[z.a].amt+=z.amt||0;});
+  });
+  const totFR=Object.values(fMap).reduce((s,f)=>s+f.r,0)||1,totCT=Object.values(cMap).reduce((s,c)=>s+c.t,0)||1,totTR=Object.values(tMap).reduce((s,t)=>s+t.rev,0)||1;
+  const fop=Object.values(fMap).sort((a,b)=>b.r-a.r).slice(0,6).map(f=>({t:f.t,rev:rr(f.r),trips:f.trips,sh:rp(f.r,totFR)}));
+  const corr=Object.values(cMap).sort((a,b)=>b.t-a.t).slice(0,6).map(c=>({c:c.c,trips:c.t,rev:rr(c.r),sh:rp(c.t,totCT),avg:c.t?rr(c.r/c.t):0}));
+  const tod=Object.values(tMap).map(t=>({w:t.w,trips:t.trips,pct:rp(t.rev,totTR),avg:t.trips?rr(t.rev/t.trips):0}));
+  const burn_zone=Object.values(bzMap).sort((a,b)=>b.amt-a.amt).slice(0,8).map(z=>({a:z.a,trips:z.trips,amt:rr(z.amt)}));
+
+  // Merge burned, bonus, split, mix, netdep, cancel
+  let burn={trips:0,amt:0,mi:0,own:{trips:0,amt:0},aff:{trips:0,amt:0}};
+  let bon={trips:0,amt:0,only_trips:0,only_amt:0,ovl_trips:0,ovl_amt:0,ovl_comp:0,own:{trips:0,amt:0,only_trips:0,only_amt:0,ovl_trips:0,ovl_amt:0,ovl_comp:0},aff:{trips:0,amt:0,only_trips:0,only_amt:0,ovl_trips:0,ovl_amt:0,ovl_comp:0}};
+  let split={own_pay:0,own_trips:0,aff_pay:0,aff_trips:0};
+  let mix={od_oa:0,od_aa:0,ad_oa:0,ad_aa:0};
+  let netdep={our_acct_us:0,our_acct_aff:0};
+  let cancel={total:0,rev:0,rate:0};
+  let ns_total=0,disp=0;
+  dayBDs.forEach(b=>{
+    if(b.burned){burn.trips+=b.burned.trips||0;burn.amt+=b.burned.amt||0;burn.mi+=b.burned.mi||0;if(b.burned.own){burn.own.trips+=b.burned.own.trips||0;burn.own.amt+=b.burned.own.amt||0;}if(b.burned.aff){burn.aff.trips+=b.burned.aff.trips||0;burn.aff.amt+=b.burned.aff.amt||0;}}
+    if(b.bonus){bon.trips+=b.bonus.trips||0;bon.amt+=b.bonus.amt||0;bon.only_trips+=b.bonus.only_trips||0;bon.only_amt+=b.bonus.only_amt||0;bon.ovl_trips+=b.bonus.ovl_trips||0;bon.ovl_amt+=b.bonus.ovl_amt||0;bon.ovl_comp+=b.bonus.ovl_comp||0;if(b.bonus.own){bon.own.trips+=b.bonus.own.trips||0;bon.own.amt+=b.bonus.own.amt||0;bon.own.only_trips+=b.bonus.own.only_trips||0;bon.own.only_amt+=b.bonus.own.only_amt||0;bon.own.ovl_trips+=b.bonus.own.ovl_trips||0;bon.own.ovl_amt+=b.bonus.own.ovl_amt||0;bon.own.ovl_comp+=b.bonus.own.ovl_comp||0;}if(b.bonus.aff){bon.aff.trips+=b.bonus.aff.trips||0;bon.aff.amt+=b.bonus.aff.amt||0;bon.aff.only_trips+=b.bonus.aff.only_trips||0;bon.aff.only_amt+=b.bonus.aff.only_amt||0;bon.aff.ovl_trips+=b.bonus.aff.ovl_trips||0;bon.aff.ovl_amt+=b.bonus.aff.ovl_amt||0;bon.aff.ovl_comp+=b.bonus.aff.ovl_comp||0;}}
+    if(b.split){split.own_pay+=b.split.own_pay||0;split.own_trips+=b.split.own_trips||0;split.aff_pay+=b.split.aff_pay||0;split.aff_trips+=b.split.aff_trips||0;}
+    if(b.mix){mix.od_oa+=b.mix.od_oa||0;mix.od_aa+=b.mix.od_aa||0;mix.ad_oa+=b.mix.ad_oa||0;mix.ad_aa+=b.mix.ad_aa||0;}
+    if(b.netdep){netdep.our_acct_us+=b.netdep.our_acct_us||0;netdep.our_acct_aff+=b.netdep.our_acct_aff||0;}
+    if(b.cancel){cancel.total+=b.cancel.total||0;cancel.rev+=b.cancel.rev||0;}
+    ns_total+=b.ns_total||0;disp+=b.disp||0;
+  });
+  burn.amt=rr(burn.amt);burn.own.amt=rr(burn.own.amt);burn.aff.amt=rr(burn.aff.amt);
+  burn.pmi=burn.mi?rr(burn.amt/burn.mi):0;
+  cancel.rate=disp?rp(cancel.total,cancel.total+disp):0;
+
+  // Merge our_acct_own / our_acct_aff
+  const oaMap={},aaMap={};
+  dayBDs.forEach(b=>{
+    (b.our_acct_own||[]).forEach(a=>{if(!oaMap[a.n])oaMap[a.n]={n:a.n,t:0,r:0,p:0,mi_t:0};oaMap[a.n].t+=a.trips||0;oaMap[a.n].r+=a.rev||0;oaMap[a.n].p+=a.pay||0;oaMap[a.n].mi_t+=(a.mi||0)*(a.trips||0);});
+    (b.our_acct_aff||[]).forEach(a=>{if(!aaMap[a.n])aaMap[a.n]={n:a.n,t:0,r:0,p:0,mi_t:0};aaMap[a.n].t+=a.trips||0;aaMap[a.n].r+=a.rev||0;aaMap[a.n].p+=a.pay||0;aaMap[a.n].mi_t+=(a.mi||0)*(a.trips||0);});
+  });
+  const totOT=split.own_trips||1;
+  const mkA=m=>Object.values(m).sort((a,b)=>b.t-a.t).slice(0,15).map(a=>({n:a.n,trips:a.t,rev:rr(a.r),pay:rr(a.p),avg:a.t?rr(a.r/a.t):0,avgp:a.t?rr(a.p/a.t):0,mi:a.t?Math.round(a.mi_t/a.t*10)/10:0,sh:rp(a.t,totOT)}));
+
+  // Unique active drivers from dr/dt names
+  const drvNames=new Set();dayBDs.forEach(b=>[...(b.dr||[]),...(b.dt||[])].forEach(d=>drvNames.add(d.n)));
+
+  return {dr,dt,acct,ns_acct,geo,geo_do,fop,corr,tod,burn_zone,burned:burn,bonus:bon,split,mix,netdep,cancel,our_acct_own:mkA(oaMap),our_acct_aff:mkA(aaMap),ns_total,disp,drv_active:drvNames.size};
+}
+
 function applyCustomRange(){
   const f=document.getElementById('cp-from').value;
   const t=document.getElementById('cp-to').value;
@@ -634,6 +722,7 @@ function applyCustomRange(){
   customMetrics.nsr=customMetrics.disp?(customMetrics.ns/customMetrics.disp*100).toFixed(1):'0';
   customMetrics.lost=Math.round(customMetrics.ns*customMetrics.avg);
   document.getElementById('cp-info').textContent=inRange.length+' days · '+customMetrics.fromLbl+' \u2192 '+customMetrics.toLbl;
+  customBD=buildCustomBD();
   upd();
 }
 
@@ -655,7 +744,7 @@ function pid(){
   if(period==='c')return null;
   return qKeyAt(qi);
 }
-function bd(){const id=pid();return id&&BREAKDOWN[id]?BREAKDOWN[id]:null;}
+function bd(){if(period==='c')return customBD;const id=pid();return id&&BREAKDOWN[id]?BREAKDOWN[id]:null;}
 function plbl(){if(period==='d')return ALL_DAYS[di].l;if(period==='w')return'Week of '+AW[wi].label;if(period==='m')return moLabelAt(mi)+' 2026';return qLabelAt(qi);}
 function gmet(){if(period==='c'){return customMetrics||{rev:0,trips:0,pay:0,comp:0,sur:0,disp:0,ns:0,avg:0};}if(period==='y')return yDataAt(yi);if(period==='q')return qDataAt(qi);if(period==='m'){const md=moDataAt(mi);return md||Q1_MONTHS[mi]||Q2_APR;}if(period==='w')return AW[wi];const d=ALL_DAYS[di];return{rev:d.rev,comp:d.comp,trips:d.trips,avg:d.avg,pay:d.pay,ns:d.ns,disp:d.disp,sur:d.sur,mgnp:(d.comp/d.rev*100).toFixed(1),cr:(d.trips/d.disp*100).toFixed(1),nsr:(d.ns/d.disp*100).toFixed(1),lost:Math.round(d.ns*d.avg)};}
 function gprev(){if(period==='y')return yi>0?yDataAt(yi-1):null;if(period==='q')return qi>0?qDataAt(qi-1):null;if(period==='m'){if(mi===0)return null;return moDataAt(mi-1);}if(period==='w'){const i=wi-1;return i>=0?AW[i]:null;}const i=di-1;return i>=0?ALL_DAYS[i]:null;}
@@ -1636,10 +1725,13 @@ document.querySelectorAll('.ptab').forEach(b=>b.addEventListener('click',()=>{
 }));
 
 buildPickers();initCharts();upd();
-const cpApply=document.getElementById('cp-apply');if(cpApply)cpApply.addEventListener('click',applyCustomRange);
 const cpFromEl=document.getElementById('cp-from'),cpToEl=document.getElementById('cp-to');
-if(cpFromEl)cpFromEl.addEventListener('change',()=>{if(period==='c')applyCustomRange();});
-if(cpToEl)cpToEl.addEventListener('change',()=>{if(period==='c')applyCustomRange();});
+// When start date changes: clear end date so user must pick it fresh
+if(cpFromEl)cpFromEl.addEventListener('change',()=>{if(cpToEl)cpToEl.value='';});
+// When end date changes: auto-apply only if both dates are set and range is valid
+if(cpToEl)cpToEl.addEventListener('change',()=>{
+  if(period==='c'&&cpFromEl&&cpFromEl.value&&cpToEl.value&&cpToEl.value>=cpFromEl.value)applyCustomRange();
+});
 const cpFrom=document.getElementById('cp-from'),cpTo=document.getElementById('cp-to');
 if(cpFrom&&!cpFrom.value)cpFrom.value=YEAR_LBL+'-04-01';
 if(cpTo&&!cpTo.value)cpTo.value=ALL_DAYS.at(-1)?(()=>{const d=parseDayLabel(ALL_DAYS.at(-1).l);return d?d.toISOString().slice(0,10):YEAR_LBL+'-04-28';})():YEAR_LBL+'-04-28';
