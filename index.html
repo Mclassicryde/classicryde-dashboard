@@ -1373,7 +1373,9 @@ function getCD(){
     }
     return{l:AW.map(w=>w.label),r:AW.map(w=>w.rev),t:AW.map(w=>w.trips),p:AW.map(w=>w.pay),da:AW.map(w=>drvFor((w.q===2?'w':'q1w')+w.wkIdx)),c:AW.map((_,i)=>i===wi?G:N),lbl:'Weeks',ctx:'Weeks'};
   }
-  return{l:ALL_DAYS.map(d=>d.l),r:ALL_DAYS.map(d=>d.rev),t:ALL_DAYS.map(d=>d.trips),p:ALL_DAYS.map(d=>d.pay),da:ALL_DAYS.map(d=>d.da),c:ALL_DAYS.map((_,i)=>i===di?G:DM2),lbl:'All Q2 Days',ctx:'All Q2 Days · selected: '+ALL_DAYS[di].l};
+  // Day view: single bar for the selected day only
+  const selDay=ALL_DAYS[di]||ALL_DAYS[0];
+  return{l:[selDay.l],r:[selDay.rev],t:[selDay.trips],p:[selDay.pay],da:[selDay.da],c:[G],lbl:selDay.l,ctx:selDay.l};
 }
 
 function upd(){
@@ -1419,18 +1421,23 @@ function selectFromChart(idx){
     }
   }else if(period==='w'){
     const w=AW[wi];
-    if(w.q===2){const wd=ALL_DAYS.filter(d=>d.wk===w.wkIdx);if(wd[idx]){const di2=ALL_DAYS.indexOf(wd[idx]);if(di2>=0){period='d';di=di2;switchTab('d');updatePicker('dp',di);}}}
+    if(w.q===2){const wd=ALL_DAYS.filter(d=>d.wk===w.wkIdx);if(wd[idx]){const di2=ALL_DAYS.indexOf(wd[idx]);if(di2>=0){period='d';di=di2;switchTab('d');}}}
     else{wi=idx;updatePicker('wp',wi);}
-  }else{di=idx;updatePicker('dp',di);}
+  }else{
+    // Day view shows week context; idx is local to that week — map back to ALL_DAYS index
+    const selDay2=ALL_DAYS[di]||ALL_DAYS[0];
+    const wd2=ALL_DAYS.filter(d=>d.wk===selDay2.wk&&d.q===selDay2.q);
+    if(wd2[idx]){const di2=ALL_DAYS.indexOf(wd2[idx]);if(di2>=0){di=di2;}}
+  }
   upd();
 }
 function switchTab(p){
   period=p;
   document.querySelectorAll('.ptab').forEach(x=>x.classList.remove('on'));
   document.querySelector('.ptab[data-p="'+p+'"]').classList.add('on');
-  const pm={y:'yp',q:'qp',m:'mp',w:'wp',d:'dp',c:'cp'};
-  Object.values(pm).forEach(id=>document.getElementById(id).style.display='none');
-  document.getElementById(pm[p]).style.display='flex';
+  ['yp','qp','mp','wp','dp','cp'].forEach(id=>document.getElementById(id).style.display='none');
+  const _pm={y:'yp',q:'qp',m:'mp',w:'wp',c:'cp'};
+  const _pid=_pm[p];if(_pid){document.getElementById(_pid).style.display='flex';}
 }
 function updatePicker(pid,ai){document.querySelectorAll('#'+pid+' .sb').forEach((b,i)=>b.classList.toggle('on',i===ai));}
 
@@ -1468,7 +1475,7 @@ function drillFromDetail(rowIdx,rowData){
   }else if(period==='w'){
     // rowData is a day object with label like 'Mon 4/15' → switch to Day view
     const dIdx=ALL_DAYS.findIndex(d=>d.l===rowData.l);
-    if(dIdx>=0){period='d';di=dIdx;switchTab('d');updatePicker('dp',dIdx);upd();}
+    if(dIdx>=0){period='d';di=dIdx;switchTab('d');upd();}
   }
 }
 // CSV export helper — reads any table by tbody id and downloads as CSV
@@ -1527,8 +1534,10 @@ function buildPickers(){
 document.querySelectorAll('.ptab').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('.ptab').forEach(x=>x.classList.remove('on'));b.classList.add('on');
   period=b.dataset.p;
+  if(period==='d'){di=ALL_DAYS.length-1;}
   ['yp','qp','mp','wp','dp','cp'].forEach(id=>document.getElementById(id).style.display='none');
-  document.getElementById({y:'yp',q:'qp',m:'mp',w:'wp',d:'dp',c:'cp'}[period]).style.display='flex';
+  const _pid2={y:'yp',q:'qp',m:'mp',w:'wp',c:'cp'}[period];
+  if(_pid2){document.getElementById(_pid2).style.display='flex';}
   if(period==='c'&&!customMetrics){applyCustomRange();}
   upd();
 }));
