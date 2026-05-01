@@ -234,6 +234,7 @@ tr:last-child td{border-bottom:none}
   <a href="#sec-leakage" class="toc-link">Leakage</a>
   <a href="#sec-burned" class="toc-link">Burned</a>
 <a href="#sec-bonus" class="toc-link">Bonus</a>
+  <a href="#sec-basefee" class="toc-link">Base Fee</a>
   <a href="#sec-paystatus" class="toc-link">Driver Pay</a>
   <a href="#sec-detailed" class="toc-link">Pay Detail</a>
   <a href="#sec-netdep" class="toc-link">Network Dep</a>
@@ -335,6 +336,24 @@ tr:last-child td{border-bottom:none}
   <table class="bdt" style="margin-top:12px">
     <thead><tr><th>Category</th><th class="nr">Our Drivers</th><th class="nr">Affiliates</th><th class="nr">Total</th></tr></thead>
     <tbody id="bon-tbl"></tbody>
+  </table>
+</div>
+
+<div class="st" id="sec-basefee">Base Fee Revenue<span class="stn" id="bf-lbl"></span></div>
+<div class="card">
+  <div class="lk"><div><div class="lk-l">Weekly Per-Driver Base Fee (Paisa + Sunnyside)</div><div style="font-size:9px;color:var(--m);margin-top:2px">$120 charge accrues on each driver's first drop-off of the calendar week (Option A)</div></div><div style="text-align:right"><div class="lk-v" id="bf-tot">-</div><div class="lk-p" id="bf-pct"></div></div></div>
+  <div class="lg" style="grid-template-columns:repeat(4,1fr)">
+    <div class="lb"><div class="ll">Active Paisa drivers</div><div class="lv" style="color:var(--gr)" id="bf-paisa">-</div><div class="ln" id="bf-paisan">driver-weeks</div></div>
+    <div class="lb"><div class="ll">Active Sunnyside drivers</div><div class="lv" style="color:var(--gr)" id="bf-sunny">-</div><div class="ln" id="bf-sunnyn">driver-weeks</div></div>
+    <div class="lb"><div class="ll">Trip Margin</div><div class="lv" id="bf-marg">-</div><div class="ln" id="bf-margn">CR + Paisa + Sunnyside</div></div>
+    <div class="lb w"><div class="ll">Net Take % <span style="font-weight:400;font-size:9px">(margin + base fee)</span></div><div class="lv" style="color:#005a40" id="bf-net">-</div><div class="ln" id="bf-netn">net margin / trip rev</div></div>
+  </div>
+  <div id="bf-today-row" style="display:none;margin-top:10px;padding:8px 10px;border-radius:6px;background:rgba(0,196,140,.08);border:1px solid rgba(0,196,140,.25)">
+    <span style="color:#005a40;font-weight:800;font-size:11px">+ Today's accrual: </span><span id="bf-today-txt" style="font-size:11px;color:var(--n)"></span>
+  </div>
+  <table class="bdt" style="margin-top:12px">
+    <thead><tr><th>Metric</th><th class="nr">Period</th><th class="nr">Per Week (avg)</th></tr></thead>
+    <tbody id="bf-tbl"></tbody>
   </table>
 </div>
 
@@ -1008,6 +1027,55 @@ function renderSections(){
     });
   }
   // ── End Bonus Trips ───────────────────────────────────────────────────────
+  // ── Base Fee Revenue ───────────────────────────────────────────────────────
+  try{
+    const bf=b&&b.bf;
+    const seBF=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+    const bfLblEl=document.getElementById('bf-lbl');if(bfLblEl)bfLblEl.textContent=lbl;
+    if(!bf||!bf.bf_total){
+      ['bf-tot','bf-paisa','bf-sunny','bf-marg','bf-net'].forEach(id=>seBF(id,'—'));
+      seBF('bf-pct','no Paisa/Sunnyside activity');
+      seBF('bf-paisan','—');seBF('bf-sunnyn','—');seBF('bf-margn','—');seBF('bf-netn','—');
+      const tr=document.getElementById('bf-today-row');if(tr)tr.style.display='none';
+      const tb=document.getElementById('bf-tbl');if(tb)tb.innerHTML='<tr><td colspan="3" class="no-data">No base fee data for this period</td></tr>';
+    } else {
+      const wks=bf.weeks||1;
+      const pAct=bf.paisa_active||0,sAct=bf.sunny_active||0;
+      seBF('bf-tot',f$(bf.bf_total));
+      seBF('bf-pct',(pAct+sAct).toLocaleString()+' driver-weeks · '+wks+' wk'+(wks>1?'s':''));
+      seBF('bf-paisa',pAct.toLocaleString());
+      seBF('bf-paisan',(pAct/wks).toFixed(1)+' avg/wk · $'+(pAct*120).toLocaleString());
+      seBF('bf-sunny',sAct.toLocaleString());
+      seBF('bf-sunnyn',(sAct/wks).toFixed(1)+' avg/wk · $'+(sAct*120).toLocaleString());
+      seBF('bf-marg',f$(bf.trip_marg||0));
+      seBF('bf-margn',(bf.marg_pct||0).toFixed(2)+'% of '+f$(bf.trip_rev||0)+' trip rev');
+      seBF('bf-net',(bf.net_pct||0).toFixed(2)+'%');
+      seBF('bf-netn','net margin '+f$(bf.net_marg||0));
+      // Today's accrual (only on day view with day_cap)
+      const tr=document.getElementById('bf-today-row');
+      const tt=document.getElementById('bf-today-txt');
+      if(tr&&tt){
+        if(period==='d'&&bf.bf_today!==undefined&&bf.bf_today>0){
+          tr.style.display='block';
+          tt.textContent=f$(bf.bf_today)+' from '+(bf.new_paisa||0)+' new Paisa + '+(bf.new_sunny||0)+' new Sunnyside drivers';
+        } else if(tr) tr.style.display='none';
+      }
+      // Detail table — period total + per-week average
+      const tb=document.getElementById('bf-tbl');
+      if(tb){
+        const rows=[
+          ['Active Paisa driver-weeks',pAct.toLocaleString(),(pAct/wks).toFixed(1)],
+          ['Active Sunnyside driver-weeks',sAct.toLocaleString(),(sAct/wks).toFixed(1)],
+          ['Base Fee accrued',f$(bf.bf_total),f$(bf.bf_total/wks)],
+          ['Trip Revenue (CR+Paisa+Sunny)',f$(bf.trip_rev||0),f$((bf.trip_rev||0)/wks)],
+          ['Trip Margin',f$(bf.trip_marg||0)+' ('+(bf.marg_pct||0).toFixed(2)+'%)',f$((bf.trip_marg||0)/wks)],
+          ['Net Margin (margin + base fee)',f$(bf.net_marg||0)+' ('+(bf.net_pct||0).toFixed(2)+'%)',f$((bf.net_marg||0)/wks)],
+        ];
+        tb.innerHTML=rows.map(r=>`<tr><td class="tb">${r[0]}</td><td class="nr">${r[1]}</td><td class="nr" style="color:var(--m)">${r[2]}</td></tr>`).join('');
+      }
+    }
+  }catch(e){console.warn('base fee render skipped:',e);}
+  // ── End Base Fee ─────────────────────────────────────────────────────────
     if(pC&&b.split){pC.data.datasets[0].data=[b.split.own_pay,b.split.aff_pay];pC.update();
     const ot=b.split.own_trips,at=b.split.aff_trips;
     document.getElementById('own-txt').textContent=f$(b.split.own_pay)+' · '+ot.toLocaleString()+' trips';
