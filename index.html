@@ -1652,7 +1652,7 @@ function getCD(){
   if(period==='w'){
     const w=AW[wi];
     if(w.q===2){
-      const wd=ALL_DAYS.filter(d=>d.wk===w.wkIdx);
+      const wd=ALL_DAYS.filter(d=>d.q===w.q&&d.wk===w.wkIdx);
       const pk=wd.reduce((m,d,i,a)=>d.rev>a[m].rev?i:m,0);
       return{l:wd.map(d=>d.l),r:wd.map(d=>d.rev),t:wd.map(d=>d.trips),p:wd.map(d=>d.pay),da:wd.map(d=>d.da),c:wd.map((_,i)=>i===pk?G:N),lbl:'Week of '+w.label,ctx:'Week of '+w.label+' (daily)'};
     }
@@ -1711,7 +1711,7 @@ function selectFromChart(idx){
     }
   }else if(period==='w'){
     const w=AW[wi];
-    if(w.q===2){const wd=ALL_DAYS.filter(d=>d.wk===w.wkIdx);if(wd[idx]){const di2=ALL_DAYS.indexOf(wd[idx]);if(di2>=0){period='d';di=di2;switchTab('d');}}}
+    if(w.q===2){const wd=ALL_DAYS.filter(d=>d.q===w.q&&d.wk===w.wkIdx);if(wd[idx]){const di2=ALL_DAYS.indexOf(wd[idx]);if(di2>=0){period='d';di=di2;switchTab('d');}}}
     else{wi=idx;updatePicker('wp',wi);}
   }else{
     // Day view shows week context; idx is local to that week — map back to ALL_DAYS index
